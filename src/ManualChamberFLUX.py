@@ -224,7 +224,7 @@ def start_end_times_source_name(data_file, times_file, ind):
     #Start and end index of the current closure
     start=data_file.index.searchsorted(times_file['Start time'][ind])
     try:
-        end=data_file.index.searchsorted(times_file['End time'][ind])-1 #remove the last point
+        end=data_file.index.searchsorted(times_file['End time'][ind])
     except IndexError: #If the system crashed before a closure ends
         end=len(data_file)-1
     
