@@ -23,24 +23,6 @@ Linux:
 
 	pip install .
 
-Alternative install
-=
-
-If you don't have Python installed you could start by installing Anaconda distribution: https://www.anaconda.com/products/distribution
-
-If you don't want Anaconda, install Python 3 and make sure Git is installed: https://git-scm.com/download/ (for Windows)
-
-Finally, navigate to the folder containing the requirements.txt file and run the command:
-
-Windows:
-
-	py -m pip install -r requirements.txt
-	
-Linux:
-
-	pip install -r requirements.txt
-
-
 Version history
 =
 v. 1.0  
