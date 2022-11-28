@@ -19,6 +19,9 @@ site_name='results_example'
 #Directory where fluxes are saved. A folder called 'plots' is created
 #into this folder, if plots are made.
 #The location needs to be in hyphens
+#The folders can be separated by "/" (Linux and windows) or by "\" (Windows)
+#But if the folders are separated by "\", one needs to add "r" before the first hyphen like this:
+#result_loc=r'C:\m\flux_example\results\'
 result_loc='/home/m/flux_example/results/'
 
 #===============================================================================================================#
@@ -47,6 +50,9 @@ result_loc='/home/m/flux_example/results/'
 
 #Rest of the columns in the datafile will be ignored
 
+#The folders can be separated by "/" (Linux and windows) or by "\" (Windows)
+#But if the folders are separated by "\", one needs to add "r" before the first hyphen like this:
+#result_loc=r'C:\m\flux_example\data_example.csv'
 data_loc='/home/m/flux_example/data/data_example.csv'
 
 #===============================================================================================================#
@@ -74,6 +80,9 @@ data_loc='/home/m/flux_example/data/data_example.csv'
 #closure here if you want them saved
 #with the respective fluxes.
 #The location needs to be in hyphens.
+#The folders can be separated by "/" (Linux and windows) or by "\" (Windows)
+#But if the folders are separated by "\", one needs to add "r" before the first hyphen like this:
+#result_loc=r'C:\m\flux_example\times_example.csv'
 times_loc='/home/m/flux_example/times_example.xlsx'
 
 #===============================================================================================================#
