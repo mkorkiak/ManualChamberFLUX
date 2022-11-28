@@ -158,7 +158,7 @@ def load_times_file():
         print("There are unrealistic air pressures in the times file on the following rows:")
         for row in bad_P:
             print(row)
-        print("Closing the program.")
+        sys.exit("Closing the program.")
         
     #Check that headspace temperature values make sense. This is mainly for checking that the units are ok.
     bad_T=data_times[(data_times['Headspace temperature (C)']<-40) | (data_times['Headspace temperature (C)']>50)].index
@@ -166,7 +166,7 @@ def load_times_file():
         print("There are unrealistic headspace temperatures in the times file on the following rows:")
         for row in bad_T:
             print(row)
-        print("Closing the program.")
+        sys.exit("Closing the program.")
         
     return data_times
 
