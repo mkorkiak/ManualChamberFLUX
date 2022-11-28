@@ -150,7 +150,7 @@ def load_times_file():
             print("Check the following rows in the times file:")
             for row in bad_rows:
                 print(row)
-            print("Closing the program.")
+            sys.exit("Closing the program.")
     
     #Check that air pressure values make sense. This is mainly for checking that the units are ok.
     bad_P=data_times[(data_times['Air pressure (hPa)']<850) | (data_times['Air pressure (hPa)']>1200)].index
