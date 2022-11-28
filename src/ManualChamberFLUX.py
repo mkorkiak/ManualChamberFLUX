@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import os, bisect, warnings, time, sys
+import os, bisect, warnings, time, sys, ntpath
 import numpy as np
 import datetime as dt
 import pandas as pd
@@ -15,9 +15,13 @@ from alive_progress import alive_bar
 try:
     import config_manualFLUX as config
 except (SyntaxError, NameError):
-    sys.exit("One of the required parameters in the config file is empty or has an incorrect value or the config file is completely messed up! Closing the program.")
+    sys.exit("One of the required parameters in the config file is empty or has"
+             " an incorrect value or the config file is completely messed up!"
+             " Check that: none of the parameters are empty, folder/file paths"
+             " have hyphens around them, and parameters that should have a True"
+             " or False value are written capitalized. Closing the program.")
 
-VERSION='v1.2 NOV 2022'
+VERSION='v1.3 NOV 2022'
 APPNAME='ManualChamberFlUX'
 
 #Ignore warnings. I know what I'm doing.
@@ -36,6 +40,16 @@ def check_config():
     
     #Create the folder for the results
     check_create_dir(config.result_loc)
+    
+    #Check the result_loc parameter, if the final character is not "/" or "\", add it
+    if config.result_loc[-1]!='/':
+        if config.result_loc[-1]!='\\':
+            #Check the first character, if it is "/", assume linux system and add "/"
+            if config.result_loc[0]=='/':
+                config.result_loc=config.result_loc+'/'
+            #Otherwise, it is a windows system, add "\"
+            else:
+                config.result_loc=config.result_loc+'\\'
     
     #If closure plots are made, create folder for them
     if config.plot_closures==True:
@@ -80,21 +94,30 @@ def load_data_file():
     return data
 
 def load_times_file():
-    data_times=pd.read_excel(config.times_loc,dtype={'Date':str,'Start time':str,'End time':str}) #Load the times file
+    #Load the times file
+    data_times=pd.read_excel(config.times_loc,dtype={'Date':str,'Start time':str,'End time':str})
     
     #Check that the mandatory columns exist
-    test_cols=data_times.columns.isin(['Date','Start time','End time','Source','System height (m)','Headspace temperature (C)','Air pressure (hPa)'])
+    test_cols=data_times.columns.isin(['Date','Start time','End time','Source',
+                                       'System height (m)','Headspace temperature (C)',
+                                       'Air pressure (hPa)'])
     test_cols=test_cols[test_cols==True]
     if len(test_cols)<7:
-        sys.exit("One of the following columns is missing from the times file: 'Date','Start time','End time','Source','System height (m)','Headspace temperature (C)', 'Air pressure (hPa)'! Closing the program.")
+        sys.exit("One of the following columns is missing from the times file: "
+                 "'Date','Start time','End time','Source','System height (m)',"
+                 "'Headspace temperature (C)', 'Air pressure (hPa)'! Closing the program.")
     
     #Times to datetime
     start_times=pd.Series()
     end_times=pd.Series()
     try:
         for k in range(len(data_times)):
-            start_times=start_times.append(pd.Series(index=[pd.to_datetime(data_times.Date[k][0:10]+' '+data_times['Start time'][k],format=config.time_format_times)]))
-            end_times=end_times.append(pd.Series(index=[pd.to_datetime(data_times.Date[k][0:10]+' '+data_times['End time'][k],format=config.time_format_times)]))
+            start_times=start_times.append(
+                pd.Series(index=[pd.to_datetime(data_times.Date[k][0:10]+' '+data_times['Start time'][k],
+                                                format=config.time_format_times)]))
+            end_times=end_times.append(
+                pd.Series(index=[pd.to_datetime(data_times.Date[k][0:10]+' '+data_times['End time'][k],
+                                                format=config.time_format_times)]))
     except:
         sys.exit('There is an invalid value in either "Start time" or "End time" column in the times file!')
     
@@ -102,14 +125,32 @@ def load_times_file():
     data_times['End time']=end_times.index
     
     #Check that the start and end times in the times file make sense
+    #If the measurements spans over midnight, adjust the end time accordingly
     st_et_diff=data_times['End time']-data_times['Start time']
     if len(st_et_diff[st_et_diff<dt.timedelta(0)])>0:
-        rows=data_times.loc[st_et_diff[st_et_diff<dt.timedelta(0)].index].index+2
-        print("There are rows where the end time is smaller than the start time.")
-        print("Check the following rows in the times file:")
-        for row in rows:
-            print(row)
-        print("Closing the program.")
+        #Get rows where the start time is bigger than the end time
+        st_et_diff=st_et_diff[st_et_diff<-dt.timedelta(seconds=1)].index
+        
+        #Check the rows with a bigger starting time than an end time if they occur
+        #during midnight, if they do, add 1 day to the end time and check that the
+        #measurement is shorter than 2 hours
+        bad_rows=np.array([])
+        for row in st_et_diff:
+            cur_end=data_times.iloc[row]['End time'] #Old end time
+            new_end=cur_end+dt.timedelta(days=1) #New end time (+1 day)
+            cur_length=new_end-data_times.iloc[row]['Start time']
+            cur_length=cur_length.total_seconds() #Length of the measurement in seconds
+            if cur_length<7200: #If the measurement is shorter than 2 hours, it is ok
+                data_times.at[row,'End time']=new_end
+            else: #Otherwise there is a typo in the starting or ending time
+                bad_rows=np.append(bad_rows,row)
+        
+        if len(bad_rows)>0:
+            print("There are rows where the end time is smaller than the start time.")
+            print("Check the following rows in the times file:")
+            for row in bad_rows:
+                print(row)
+            print("Closing the program.")
     
     #Check that air pressure values make sense. This is mainly for checking that the units are ok.
     bad_P=data_times[(data_times['Air pressure (hPa)']<850) | (data_times['Air pressure (hPa)']>1200)].index
@@ -169,30 +210,38 @@ def check_columns(data):
 #Create columns to the result file for gases which were found from the datafile in check_columns
 def init_results(gas):
     if gas=='co2':
-        results=pd.DataFrame(columns=['Lin_Flux_CO2 [mg CO2 m-2 h-1]','Exp_Flux_CO2 [mg CO2 m-2 h-1]'])
+        results=pd.DataFrame(columns=['Lin_Flux_CO2 [mg CO2 m-2 h-1]',
+                                      'Exp_Flux_CO2 [mg CO2 m-2 h-1]','Start_CO2 [ppm]','End_CO2 [ppm]'])
         if config.save_statistics==True:
-            temp=pd.DataFrame(columns=['std_CO2_lin', 'std_CO2_exp', 'NRMSE_CO2_lin', 'NRMSE_CO2_exp','R2adj_CO2_lin','R2adj_CO2_exp',
+            temp=pd.DataFrame(columns=['std_CO2_lin', 'std_CO2_exp', 'NRMSE_CO2_lin',
+                                       'NRMSE_CO2_exp','R2adj_CO2_lin','R2adj_CO2_exp',
                                        'AIC_CO2_lin','AIC_CO2_exp','Autocorr_CO2_lin','Autocorr_CO2_exp'])
             results=results.join(temp)
             
     if gas=='ch4':
-        results=pd.DataFrame(columns=['Lin_Flux_CH4 [ug CH4 m-2 h-1]','Exp_Flux_CH4 [ug CH4 m-2 h-1]'])
+        results=pd.DataFrame(columns=['Lin_Flux_CH4 [ug CH4 m-2 h-1]',
+                                      'Exp_Flux_CH4 [ug CH4 m-2 h-1]','Start_CH4 [ppm]','End_CH4 [ppm]'])
         if config.save_statistics==True:
-            temp=pd.DataFrame(columns=['std_CH4_lin', 'std_CH4_exp', 'NRMSE_CH4_lin', 'NRMSE_CH4_exp','R2adj_CH4_lin','R2adj_CH4_exp',
+            temp=pd.DataFrame(columns=['std_CH4_lin', 'std_CH4_exp', 'NRMSE_CH4_lin',
+                                       'NRMSE_CH4_exp','R2adj_CH4_lin','R2adj_CH4_exp',
                                        'AIC_CH4_lin','AIC_CH4_exp','Autocorr_CH4_lin','Autocorr_CH4_exp'])
             results=results.join(temp)
 
     if gas=='n2o':
-        results=pd.DataFrame(columns=['Lin_Flux_N2O [ug N2O m-2 h-1]','Exp_Flux_N2O [ug N2O m-2 h-1]'])
+        results=pd.DataFrame(columns=['Lin_Flux_N2O [ug N2O m-2 h-1]',
+                                      'Exp_Flux_N2O [ug N2O m-2 h-1]','Start_N2O [ppm]','End_N2O [ppm]'])
         if config.save_statistics==True:
-            temp=pd.DataFrame(columns=['std_N2O_lin', 'std_N2O_exp', 'NRMSE_N2O_lin', 'NRMSE_N2O_exp','R2adj_N2O_lin','R2adj_N2O_exp',
+            temp=pd.DataFrame(columns=['std_N2O_lin', 'std_N2O_exp', 'NRMSE_N2O_lin',
+                                       'NRMSE_N2O_exp','R2adj_N2O_lin','R2adj_N2O_exp',
                                        'AIC_N2O_lin','AIC_N2O_exp','Autocorr_N2O_lin','Autocorr_N2O_exp'])
             results=results.join(temp)
             
     if gas=='co':
-        results=pd.DataFrame(columns=['Lin_Flux_CO [ug CO m-2 h-1]','Exp_Flux_CO [ug CO m-2 h-1]'])
+        results=pd.DataFrame(columns=['Lin_Flux_CO [ug CO m-2 h-1]',
+                                      'Exp_Flux_CO [ug CO m-2 h-1]','Start_CO [ppm]','End_CO [ppm]'])
         if config.save_statistics==True:
-            temp=pd.DataFrame(columns=['std_CO_lin', 'std_CO_exp', 'NRMSE_CO_lin', 'NRMSE_CO_exp','R2adj_CO_lin','R2adj_CO_exp',
+            temp=pd.DataFrame(columns=['std_CO_lin', 'std_CO_exp', 'NRMSE_CO_lin',
+                                       'NRMSE_CO_exp','R2adj_CO_lin','R2adj_CO_exp',
                                        'AIC_CO_lin','AIC_CO_exp','Autocorr_CO_lin','Autocorr_CO_exp'])
             results=results.join(temp)
             
@@ -201,7 +250,8 @@ def init_results(gas):
 #Initialize the result array for the optional columns in the times file
 def init_results_rest(times_file):
     #Drop the mandatory columns
-    results_rest=times_file.drop(['Date','Start time','End time','Source','System height (m)','Headspace temperature (C)','Air pressure (hPa)'],axis=1)
+    results_rest=times_file.drop(['Date','Start time','End time','Source','System height (m)',
+                                  'Headspace temperature (C)','Air pressure (hPa)'],axis=1)
     
     #Add an extra columns
     results_rest['Fit length [s]']=''
@@ -221,6 +271,8 @@ def data_time_avg(data):
 def start_end_times_source_name(data_file, times_file, ind):
     skip_flag=0 #Used to flag the closure (0=ok, 1=skip)
     
+    cur_source=times_file['Source'][ind] #Get the current source
+    
     #Start and end index of the current closure
     start=data_file.index.searchsorted(times_file['Start time'][ind])
     try:
@@ -230,8 +282,13 @@ def start_end_times_source_name(data_file, times_file, ind):
     
     data_closure=data_file.iloc[start:end] #Get the current closure
     
-    cur_source=times_file['Source'][ind] #Get the current source
-    
+    #Check that the closure is shorter than two hours because no one does chamber
+    #measurements that take longer than that, if they do, they are doing something wrong
+    #If it is not, skip it
+    if (data_closure.index[-1]-data_closure.index[0]).total_seconds()>120*60:
+        skip_flag=1
+        return np.nan, cur_source, times_file['Start time'][ind], skip_flag
+        
     try:
         stime=data_closure.index[0] #Starting time
     except IndexError: #If the current closure data is empty, move to the next one
@@ -494,8 +551,10 @@ def flux_plotter(gas_col, data_closure, yfits_gas, exp_failed_gas):
     #plotplot
     fig=plt.figure(num=None, figsize=(10, 7), dpi=100) 
     ax=fig.add_subplot(111)
-    org=ax.plot(data_closure['Fit length [s]'], data_closure[gas_col], 'o', color='k') #plot the data points
-    lin,=ax.plot(data_closure['Fit length [s]'], yfits_gas[:,0], '-', color='r', linewidth=2) #plot the lin fit
+    #plot the data points
+    org=ax.plot(data_closure['Fit length [s]'], data_closure[gas_col], 'o', color='k')
+    #plot the lin fit
+    lin,=ax.plot(data_closure['Fit length [s]'], yfits_gas[:,0], '-', color='r', linewidth=2) 
     
     #Remove the annoying exponent format from the yaxislabels that python likes to use sometimes
     ax.get_yaxis().get_major_formatter().set_useOffset(False) 
@@ -668,15 +727,18 @@ def soil_flux(cols_to_calc, gas, coefs, cur_T, cur_P, cur_height):
     return fluxes, dcdt
 
 #Add the results of the current closure to the result dataframe
-def result_array(results_df, gas, fluxes, fit_params, data_closure):
+def result_array(results_df, gas, fluxes, concs, fit_params, data_closure):
     #Add also the statistic columns if wanted
     if config.save_statistics==True:
-        temp=pd.DataFrame([[fluxes.lin[0],fluxes.exp[0],fit_params.slope_err.lin,fit_params.slope_err.exp,
-                           fit_params.nrmse.lin,fit_params.nrmse.exp,fit_params.r2.lin,fit_params.r2.exp,
-                           fit_params.aic.lin,fit_params.aic.exp,fit_params.acorrs.lin,fit_params.acorrs.exp]],
+        temp=pd.DataFrame([[fluxes.lin[0],fluxes.exp[0],concs.init[0],concs.final[0],
+                           fit_params.slope_err.lin,fit_params.slope_err.exp,
+                           fit_params.nrmse.lin,fit_params.nrmse.exp,fit_params.r2.lin,
+                           fit_params.r2.exp,fit_params.aic.lin,fit_params.aic.exp,
+                           fit_params.acorrs.lin,fit_params.acorrs.exp]],
                            index=[data_closure.index[0]], columns=results_df.columns)
-    else: #Only the fluxes
-        temp=pd.DataFrame([[fluxes.lin[0],fluxes.exp[0]]],index=[data_closure.index[0]], columns=results_df.columns)
+    else: #Only the fluxes (and mixing ratios)
+        temp=pd.DataFrame([[fluxes.lin[0],fluxes.exp[0],concs.init,concs.final]],
+                          index=[data_closure.index[0]], columns=results_df.columns)
     
     results_df=results_df.append(temp)
     
@@ -689,7 +751,8 @@ def result_array_rest(results_rest, results_extra, data_closure, anc_means, cur_
         results_rest=pd.DataFrame(results_extra.iloc[0,:]).transpose()
         results_rest.index=[anc_means.index[0]] #Closure starting time as index
         results_rest=results_rest.join(anc_means) #Join the ancillary data of the closure
-        results_rest['Fit length [s]']=np.int(data_closure['Fit length [s]'][len(data_closure)-1]) #Add fit length column
+        #Add fit length column
+        results_rest['Fit length [s]']=np.int(data_closure['Fit length [s]'][len(data_closure)-1]) 
         results_rest['Source']=cur_source #Add the current source
     
     else: #If the dataframe exists (not the first closure of the data), append it with the new values
@@ -711,6 +774,20 @@ def interactive_times(data_file, times_file):
     for ind in range(len(times_file)):
         #Get the current closure
         data_closure, cur_source, stime, skip_flag=start_end_times_source_name(data_file, times_file, ind)
+        
+        #Check if the data_closure table returned empty
+        if skip_flag==1:
+            timestr=times_file['Start time'][ind].strftime('%Y-%m-%d %H:%M:%S')
+            sys.exit('No data for the measurement starting on: '+timestr+' was found.'+
+                  ' Check the Start and End time in the times file for that measurement! '+
+                  'If times file is ok, the data file does not contain the data for that measurement!')
+            #Save the updated times_file?
+            if config.interactive_save==True:
+                #Get the name of the times file
+                _,times_name=ntpath.split(config.times_loc)
+                times_name=times_name[:-5] #Remove the extension of the filename, assuming xlsx
+                #Save the times file as an excel file
+                times_file.to_excel(config.result_loc+times_name+'_new.xlsx',index=False)
         
         #Loop the same plot until the clicks have been properly given.
         while True:
@@ -754,13 +831,16 @@ def interactive_times(data_file, times_file):
                 #Check that new_start is smaller than new_end
                 #If it is not, show the figure again.
                 if new_start>new_end:
-                    print("Select the starting time before the ending time! The starting time cannot be later than the ending time!")
+                    print("Select the starting time before the ending time! "
+                          "The starting time cannot be later than the ending time!")
                     continue
                 
                 #Check that the selected fitting period is longer than fit_minimum in the config file 
                 #If it is not, show the figure again.
                 if (new_end-new_start).seconds<config.fit_minimum:
-                    print("The selected period was shorter than the fit_minimum in the config file! Select a longer period or adjust the fit_minimum in the config file.")
+                    print("The selected period was shorter than the fit_minimum "
+                          "in the config file! Select a longer period or adjust "
+                          "the fit_minimum in the config file.")
                     continue
                 
             except (IndexError, NameError):
@@ -777,7 +857,8 @@ def interactive_times(data_file, times_file):
     #Save the updated times_file?
     if config.interactive_save==True:
         #Get the name of the times file
-        times_name=config.times_loc.split("/")[-1][:-5]
+        _,times_name=ntpath.split(config.times_loc)
+        times_name=times_name[:-5] #Remove the extension of the filename, assuming xlsx
         #Save the times file as an excel file
         times_file.to_excel(config.result_loc+times_name+'_new.xlsx',index=False)
     
@@ -806,11 +887,12 @@ def fluxcalc(times_file, data_file):
             #Get current closure data, source chamber and starting time
             data_closure, cur_source, stime, skip_flag=start_end_times_source_name(data_file, times_file, ind)
             
-            #If no closure data for the given start and end times was found, skip it.
+            #Check if the data_closure table returned empty
             if skip_flag==1:
-                datestr=dt.datetime.strftime(times_file['Start time'][ind],'%Y-%m-%d %H:%M:%S')
-                print(cur_source + ' on '+datestr+' was skipped because no data was found! Check the start and end times in the datafile!')
-                continue
+                timestr=times_file['Start time'][ind].strftime('%Y-%m-%d %H:%M:%S')
+                sys.exit('No data for the measurement starting on: '+timestr+' was found.'+
+                      ' Check the Start and End time in the times file for that measurement! '+
+                      'If times file is ok, the data file does not contain the data for that measurement!')
             
             #Limit the current closure data according to minimum and maximum fit parameters
             data_closure, stime_new, skip_flag=limit_closure_time(data_closure, stime)
@@ -818,8 +900,7 @@ def fluxcalc(times_file, data_file):
             #If the closure time is shorter than the minimum required length, skip it.
             if skip_flag==1:
                 datestr=dt.datetime.strftime(stime,'%Y-%m-%d %H:%M:%S')
-                print(cur_source + ' on '+datestr+' was skipped because the closure time was shorter than "fit_minimum" in the config file!')
-                continue
+                sys.exit(cur_source + ' on '+datestr+' has a shorter closure time than "fit_minimum" in the config file!')
             
             #Get the current hs temperature, air pressure and system height from the times file
             cur_T=times_file['Headspace temperature (C)'][ind]
@@ -831,11 +912,12 @@ def fluxcalc(times_file, data_file):
                     cur_T=data_closure['Headspace temperature (C)'].mean()
                 
                     if np.isnan(cur_T)==True:
-                        print("Headspace temperature for "+cur_source+" in "+str(stime)+" was not found neither from the times or data file!")
-                        continue
+                        sys.exit("Headspace temperature for "+cur_source+" in "+str(stime)+
+                                 " was not found neither from the times or data file!")
+
                 except IndexError:
-                        print("Headspace temperature for "+cur_source+" in "+str(stime)+" was not found neither from the times or data file!")
-                        continue
+                        sys.exit("Headspace temperature for "+cur_source+" in "+str(stime)+
+                                 " was not found neither from the times or data file!")
                     
             #If the air temperature is not given in the times file, check the data file and calculate the mean
             #If no air pressure is given, set it to nan
@@ -854,29 +936,41 @@ def fluxcalc(times_file, data_file):
             
             #CO2
             if cols_to_calc.CO2_dry[0]==True and data_closure.CO2_dry.isnull().all()==False:
+                #Get the initial and final CO2 mixing ratios during the closure
+                concs_co2=pd.DataFrame({'init':data_closure.CO2_dry[0],'final':
+                                        data_closure.CO2_dry[-1]},index=[0])
                 #Make the fits
                 coef_co2, fit_params_co2=gas_fitting(data_closure,'co2',cur_source) #Make the fits
-                fluxes_co2, dcdt_co2=soil_flux(cols_to_calc, 'co2', coef_co2, cur_T, cur_P, cur_height) #Calculate the flux
-                results_co2=result_array(results_co2, 'co2', fluxes_co2, fit_params_co2, data_closure) #Save the results to the results dataframe
+                #Calculate the flux
+                fluxes_co2, dcdt_co2=soil_flux(cols_to_calc, 'co2', coef_co2, cur_T, cur_P, cur_height)
+                #Save the results to the results dataframe
+                results_co2=result_array(results_co2, 'co2', fluxes_co2, concs_co2,
+                                         fit_params_co2, data_closure)
             
             #Repeat for the rest of the gases
             #CH4
             if cols_to_calc.CH4_dry[0]==True and data_closure.CH4_dry.isnull().all()==False:
+                concs_ch4=pd.DataFrame({'init':data_closure.CH4_dry[0],'final':
+                                        data_closure.CH4_dry[-1]},index=[0])
                 coef_ch4, fit_params_ch4=gas_fitting(data_closure,'ch4',cur_source)
                 fluxes_ch4, dcdt_ch4=soil_flux(cols_to_calc, 'ch4', coef_ch4, cur_T, cur_P, cur_height)
-                results_ch4=result_array(results_ch4, 'ch4', fluxes_ch4, fit_params_ch4, data_closure)
+                results_ch4=result_array(results_ch4, 'ch4', fluxes_ch4, concs_ch4, fit_params_ch4, data_closure)
             
             #N2O
             if cols_to_calc.N2O_dry[0]==True and data_closure.N2O_dry.isnull().all()==False:
+                concs_n2o=pd.DataFrame({'init':data_closure.N2O_dry[0],'final':
+                                        data_closure.N2O_dry[-1]},index=[0])
                 coef_n2o, fit_params_n2o=gas_fitting(data_closure,'n2o',cur_source)
                 fluxes_n2o, dcdt_n2o=soil_flux(cols_to_calc, 'n2o', coef_n2o, cur_T, cur_P, cur_height)
-                results_n2o=result_array(results_n2o, 'n2o', fluxes_n2o, fit_params_n2o, data_closure)
+                results_n2o=result_array(results_n2o, 'n2o', fluxes_n2o, concs_n2o, fit_params_n2o, data_closure)
             
             #CO
             if cols_to_calc.CO_dry[0]==True and data_closure.CO_dry.isnull().all()==False:
+                concs_co=pd.DataFrame({'init':data_closure.CO_dry[0],'final':
+                                        data_closure.CO_dry[-1]},index=[0])
                 coef_co, fit_params_co=gas_fitting(data_closure,'co',cur_source)    
                 fluxes_co, dcdt_co=soil_flux(cols_to_calc, 'co', coef_co, cur_T, cur_P, cur_height)
-                results_co=result_array(results_co, 'co', fluxes_co, fit_params_co, data_closure)
+                results_co=result_array(results_co, 'co', fluxes_co, concs_co, fit_params_co, data_closure)
                     
             #Save the current ancillary data and the data from the optional columns of the times file
             results_rest=result_array_rest(results_rest, results_extra, data_closure, anc_means, cur_source, ind)
@@ -896,10 +990,11 @@ def results_combiner(results):
     results_n2o=results[3]
     results_co=results[4]
     
-    #Add the first columns into the final result array. These columns should exist always.
+    #Add the first columns into the final result array. These columns should always exist
     results_all=pd.DataFrame(results_rest[['Source','CMB_h','Fit length [s]','T_mean','P_mean']], 
                 index=results_rest.index)
-    results_all.columns=['Source','Effective chamber height [m]','Fit length [s]','Headspace temperature [C]','Air pressure [hpa]']
+    results_all.columns=['Source','Effective chamber height [m]','Fit length [s]',
+                         'Headspace temperature [C]','Air pressure [hpa]']
     
     #Drop the columns, which were added to results_all
     results_rest=results_rest.drop(columns=['Source','CMB_h','Fit length [s]','T_mean','P_mean'])
@@ -909,24 +1004,41 @@ def results_combiner(results):
     results_all3=pd.DataFrame(index=results_rest.index) #For statistics
     
     if len(results_co2)!=0: #For CO2 fdata
-        results_all2=results_all2.join(results_co2[['Lin_Flux_CO2 [mg CO2 m-2 h-1]', 'Exp_Flux_CO2 [mg CO2 m-2 h-1]']]) #Add flux columns
-        #Drop flux columns, leaving only statistics columns
-        results_co2=results_co2.drop(columns=['Lin_Flux_CO2 [mg CO2 m-2 h-1]', 'Exp_Flux_CO2 [mg CO2 m-2 h-1]']) 
+        #Add flux and conc columns
+        results_all2=results_all2.join(results_co2[['Lin_Flux_CO2 [mg CO2 m-2 h-1]', 
+                                                    'Exp_Flux_CO2 [mg CO2 m-2 h-1]',
+                                                    'Start_CO2 [ppm]','End_CO2 [ppm]']])
+        #Drop flux and conc columns, leaving only statistics columns
+        results_co2=results_co2.drop(columns=['Lin_Flux_CO2 [mg CO2 m-2 h-1]',
+                                              'Exp_Flux_CO2 [mg CO2 m-2 h-1]',
+                                              'Start_CO2 [ppm]','End_CO2 [ppm]']) 
         results_all3=results_all3.join(results_co2) #add statistics columns
             
     if len(results_ch4)!=0: #For CH4 data
-        results_all2=results_all2.join(results_ch4[['Lin_Flux_CH4 [ug CH4 m-2 h-1]', 'Exp_Flux_CH4 [ug CH4 m-2 h-1]']])
-        results_ch4=results_ch4.drop(columns=['Lin_Flux_CH4 [ug CH4 m-2 h-1]', 'Exp_Flux_CH4 [ug CH4 m-2 h-1]']) 
+        results_all2=results_all2.join(results_ch4[['Lin_Flux_CH4 [ug CH4 m-2 h-1]',
+                                                    'Exp_Flux_CH4 [ug CH4 m-2 h-1]',
+                                                    'Start_CH4 [ppm]','End_CH4 [ppm]']])
+        results_ch4=results_ch4.drop(columns=['Lin_Flux_CH4 [ug CH4 m-2 h-1]',
+                                              'Exp_Flux_CH4 [ug CH4 m-2 h-1]',
+                                              'Start_CH4 [ppm]','End_CH4 [ppm]']) 
         results_all3=results_all3.join(results_ch4)
         
     if len(results_n2o)!=0: #For N2O data
-        results_all2=results_all2.join(results_n2o[['Lin_Flux_N2O [ug N2O m-2 h-1]', 'Exp_Flux_N2O [ug N2O m-2 h-1]']])
-        results_n2o=results_n2o.drop(columns=['Lin_Flux_N2O [ug N2O m-2 h-1]', 'Exp_Flux_N2O [ug N2O m-2 h-1]']) 
+        results_all2=results_all2.join(results_n2o[['Lin_Flux_N2O [ug N2O m-2 h-1]',
+                                                    'Exp_Flux_N2O [ug N2O m-2 h-1]',
+                                                    'Start_N2O [ppm]','End_N2O [ppm]']])
+        results_n2o=results_n2o.drop(columns=['Lin_Flux_N2O [ug N2O m-2 h-1]',
+                                              'Exp_Flux_N2O [ug N2O m-2 h-1]',
+                                              'Start_N2O [ppm]','End_N2O [ppm]']) 
         results_all3=results_all3.join(results_n2o)
         
     if len(results_co)!=0: #For CO data
-        results_all2=results_all2.join(results_co[['Lin_Flux_CO [ug CO m-2 h-1]', 'Exp_Flux_CO [ug CO m-2 h-1]']])
-        results_co=results_co.drop(columns=['Lin_Flux_CO [ug CO m-2 h-1]', 'Exp_Flux_CO [ug CO m-2 h-1]']) 
+        results_all2=results_all2.join(results_co[['Lin_Flux_CO [ug CO m-2 h-1]',
+                                                   'Exp_Flux_CO [ug CO m-2 h-1]',
+                                                   'Start_CO [ppm]','End_CO [ppm]']])
+        results_co=results_co.drop(columns=['Lin_Flux_CO [ug CO m-2 h-1]',
+                                            'Exp_Flux_CO [ug CO m-2 h-1]',
+                                            'Start_CO [ppm]','End_CO [ppm]']) 
         results_all3=results_all3.join(results_co)
     
     #Round the fluxes and statistics
