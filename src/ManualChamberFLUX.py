@@ -813,9 +813,9 @@ def interactive_times(data_file, times_file):
                     ax.set_yticks([])
                     ax.legend(loc='upper left',bbox_to_anchor=(0.6,1))
                 
-		#Fix xtick format to %H:%M:%S
-		fmt=mpl.dates.DateFormatter('%H:%M:%S')
-		ax.xaxis.set_major_formatter(fmt)
+                #tick format to %H:%M:%S
+                fmt=mpl.dates.DateFormatter('%H:%M:%S')
+                ax.xaxis.set_major_formatter(fmt)
 		
                 #Make the plot and wait for the clicks
                 new_times=plt.ginput(3, show_clicks=True)
