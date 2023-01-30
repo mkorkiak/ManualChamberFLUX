@@ -318,6 +318,10 @@ def limit_closure_time(data_closure, stime):
     end=bisect.bisect(time_dif,config.fit_maximum)
     data_closure=data_closure[0:end]
     
+    if len(data_closure)<3:
+        sys.exit('The closure starting on '+str(stime)+' includes less than 3 measurement points.'
+                 'Try increasing fit_maximum parameter in the config file.')
+    
     stime=data_closure.index[0] #Starting time of the closure
         
     return data_closure, stime, skip_flag
@@ -419,17 +423,23 @@ def estimated_autocorrelation(x):
 
 #Calculates adjusted R2 and AIC for the fits
 def stats_calc(n, sse_s, rsq_s):
+    p_lin=2
+    p_exp=3
+    
     #R2_adj
-    p=2
-    R2_lin=1-(((1-rsq_s[0])*(n-1))/(n-p-1))
-    p=3
-    R2_exp=1-(((1-rsq_s[1])*(n-1))/(n-p-1))
+    R2_lin=1-(((1-rsq_s[0])*(n-1))/(n-p_lin-1))
+    R2_exp=1-(((1-rsq_s[1])*(n-1))/(n-p_exp-1))
     
     #AIC
-    p=2
-    AIC_lin=n*np.log(sse_s[0]/n)+2*p+((2.0*p*(p+1))/(n-p-1.0))
-    p=3
-    AIC_exp=n*np.log(sse_s[1]/n)+2*p+((2.0*p*(p+1))/(n-p-1.0))
+    try:
+        AIC_lin=n*np.log(sse_s[0]/n)+2*p_lin+((2.0*p_lin*(p_lin+1))/(n-p_lin-1.0))
+    except ZeroDivisionError:
+        AIC_lin=np.nan
+
+    try:
+        AIC_exp=n*np.log(sse_s[1]/n)+2*p_exp+((2.0*p_exp*(p_exp+1))/(n-p_exp-1.0))
+    except ZeroDivisionError: #If too few measurement points, set AIC_exp to nan
+        AIC_exp=np.nan
     
     #combine
     r2_aic=pd.DataFrame({'r2_lin':R2_lin,'r2_exp':R2_exp,'aic_lin':AIC_lin,'aic_exp':AIC_exp},index=[0])
