@@ -133,6 +133,14 @@ interactive_save=True
 
 #===============================================================================================================#
 
+#How many seconds of data will be discarded from the start of the measurement.
+#This will be applied also when selecting the starting times interactively.
+#If set to 0, the starting time will be exactly the one selected interactively 
+#or the one given in the times-file.
+skip_start=30
+
+#===============================================================================================================#
+
 #The minimum and the maximum allowed length of the fit in seconds.
 #If the fit is longer than fit_maximum, datapoints from the end will
 #be removed until the length is less than fit_maximum
