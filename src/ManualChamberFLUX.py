@@ -55,7 +55,13 @@ def check_config():
     if config.plot_closures==True:
         check_create_dir(config.result_loc+'plots')
     
-    #Check that the minimum fit length is smaler than the maximum fit length
+    if type(config.fit_minimum)!=int and type(config.fit_minimum)!=float:
+        sys.exit("Config-file: fit_minimum has to have a numerical value! Closing the program.")
+        
+    if type(config.fit_maximum)!=int and type(config.fit_maximum)!=float:
+        sys.exit("Config-file: fit_maximum has to have a numerical value! Closing the program.")
+    
+    #Check that the minimum fit length is smaller than the maximum fit length
     if config.fit_minimum>config.fit_maximum:
         sys.exit("Config-file: fit_minimum can't be larger than fit_maximum! Closing the program.")
         
@@ -74,6 +80,20 @@ def check_config():
     #Check that the plot_closures paramter has either True or False value
     if config.interactive_save!=True and config.interactive_save!=False:
         sys.exit("Config-file: interactive_save has to be either True or False! Closing the program.")
+    
+    #Check that the time_avg parameter is zero or larger and has a numerical value.
+    try:
+        if config.time_avg<0:
+            sys.exit("Config-file: time_avg has to be zero or larger! Closing the program.")
+    except TypeError:
+        sys.exit("Config-file: time_avg has to have a numerical value! Closing the program.")
+    
+    #Check that the skip_start parameter is zero or larger and has a numerical value
+    try:
+        if config.skip_start<0:
+            sys.exit("Config-file: skip_start cannot be smaller than zero! Closing the program.")
+    except TypeError:
+        sys.exit("Config-file: skip_start has to have a numerical value! Closing the program.")
         
     print("Config file checked.")
     
@@ -1092,12 +1112,16 @@ def main():
     times_file=load_times_file()
     
     #Perform time averaging
-    if config.time_avg!=0:
+    if config.time_avg>0:
         data_file=data_time_avg(data_file)
     
     #Select closure starting and ending points interactively
     if config.interactive_times==True:
         times_file = interactive_times(data_file, times_file)
+    
+    #Discard seconds from the start of the closures
+    if config.skip_start>0:
+        times_file['Start time']=times_file['Start time']+dt.timedelta(seconds=config.skip_start)
     
     #Calculate the fluxes
     print("Calculating fluxes.")
