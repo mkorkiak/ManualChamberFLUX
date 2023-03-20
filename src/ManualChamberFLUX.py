@@ -21,7 +21,7 @@ except (SyntaxError, NameError):
              " have hyphens around them, and parameters that should have a True"
              " or False value are written capitalized. Closing the program.")
 
-VERSION='v1.3.1 FEB 2023'
+VERSION='v1.3.2 MAR 2023'
 APPNAME='ManualChamberFlUX'
 
 #Ignore warnings. I know what I'm doing.
@@ -835,13 +835,19 @@ def interactive_times(data_file, times_file):
                     ax.set_yticks([])
                     ax.legend(loc='upper left',bbox_to_anchor=(0.4,1))
                 if cols_to_calc.N2O_dry[0]==True and data_closure.N2O_dry.isnull().all()==False:
+                    ax=ax.twinx()
                     ax.plot(data_closure.N2O_dry,'o',color='g',label='N2O')
                     ax.set_yticks([])
                     ax.legend(loc='upper left',bbox_to_anchor=(0.5,1))
                 if cols_to_calc.CO_dry[0]==True and data_closure.CO_dry.isnull().all()==False:
+                    ax=ax.twinx()
                     ax.plot(data_closure.CO_dry,'o',color='m',label='CO')
                     ax.set_yticks([])
                     ax.legend(loc='upper left',bbox_to_anchor=(0.6,1))
+                
+                #Add title with the source and starting time to the plot
+                title_str = str(cur_source) + ', ' + stime.strftime(format='%Y-%m-%d %H:%M:%S')
+                ax.set_title(title_str)
                 
                 #tick format to %H:%M:%S
                 fmt=mpl.dates.DateFormatter('%H:%M:%S')
