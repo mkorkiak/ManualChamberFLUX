@@ -137,7 +137,7 @@ interactive_save=True
 #This will be applied also when selecting the starting times interactively.
 #If set to 0, the starting time will be exactly the one selected interactively 
 #or the one given in the times-file.
-skip_start=30
+skip_start=0
 
 #===============================================================================================================#
 
