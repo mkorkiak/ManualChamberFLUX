@@ -296,7 +296,7 @@ def start_end_times_source_name(data_file, times_file, ind):
     #Start and end index of the current closure
     start=data_file.index.searchsorted(times_file['Start time'][ind])
     try:
-        end=data_file.index.searchsorted(times_file['End time'][ind])
+        end=data_file.index.searchsorted(times_file['End time'][ind])+1
     except IndexError: #If the system crashed before a closure ends
         end=len(data_file)-1
     
@@ -896,6 +896,22 @@ def interactive_times(data_file, times_file):
     
     #Save the updated times_file?
     if config.interactive_save==True:
+	times_file_save=times_file.copy()
+        datestrs=pd.Series()
+        startstrs=pd.Series()
+        endstrs=pd.Series()
+        #Change Date and Time columns to string
+        for date, st_time, et_time, ind in zip(times_file.Date, times_file['Start time'], 
+                                               times_file['End time'], times_file.index):
+            datestrs=pd.concat([datestrs,pd.Series(date[0:10], index=[ind])])
+            startstrs=pd.concat([startstrs,pd.Series(st_time.strftime('%H:%M:%S'), index=[ind])])
+            endstrs=pd.concat([endstrs,pd.Series(et_time.strftime('%H:%M:%S'), index=[ind])])
+        
+        #Replace Date, Start time and End time column datetimes with their respective strings
+        times_file_save.Date=datestrs
+        times_file_save['Start time']=startstrs
+        times_file_save['End time']=endstrs
+	
         #Get the name of the times file
         _,times_name=ntpath.split(config.times_loc)
         times_name=times_name[:-5] #Remove the extension of the filename, assuming xlsx
