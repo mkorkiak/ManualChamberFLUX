@@ -325,7 +325,17 @@ def limit_closure_time(data_closure, stime):
     x=np.array([])
     for k in range(len(a)): #Convert to seconds from the start of the closure
         x=np.append(x,a[k].total_seconds())
-        
+    
+    #Check the time difference between the points. If the time difference between
+    #the last and the second to last point is 2x larger than the median difference, 
+    #remove the last point.
+    time_diffs=np.diff(x)
+    median_excl_last=np.median(time_diffs[:-1])
+    last_diff=time_diffs[-1]
+    if last_diff > 2*median_excl_last:
+        data_closure=data_closure[:-1]
+        x=x[:-1]
+	
     #If closure is shorter than fit_minimum, ignore it
     if x[len(x)-1]<config.fit_minimum:
         skip_flag=1
