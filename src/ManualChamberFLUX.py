@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import os, bisect, warnings, time, sys, ntpath
+import os, bisect, warnings, time, sys, ntpath, pip
 import numpy as np
 import datetime as dt
 import pandas as pd
