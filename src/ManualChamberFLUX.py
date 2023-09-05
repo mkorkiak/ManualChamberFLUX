@@ -9,7 +9,10 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
 from scipy.stats import pearsonr
-from alive_progress import alive_bar
+try:
+    from alive_progress import alive_bar
+except ModuleNotFoundError: #If module is not installed, install it.
+    pip.main(['install', 'git+https://github.com/rsalmei/alive-progress']) 
 
 #Import the config file
 try:
