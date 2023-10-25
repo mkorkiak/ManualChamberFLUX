@@ -916,7 +916,7 @@ def interactive_times(data_file, times_file):
     
     #Save the updated times_file?
     if config.interactive_save==True:
-	times_file_save=times_file.copy()
+        times_file_save=times_file.copy()
         datestrs=pd.Series()
         startstrs=pd.Series()
         endstrs=pd.Series()
