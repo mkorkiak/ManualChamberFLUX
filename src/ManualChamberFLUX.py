@@ -110,10 +110,17 @@ def load_data_file():
     data=data.sort_index() #Sort data by index
     
     #Check that at least one gas column exists
-    test_cols=data.columns.isin(['CO2_dry (ppm)','CH4_dry (ppm)','N2O_dry (ppm)','CO_dry (ppm)'])
+    cols_check=np.array(['CO2_dry (ppm)','CH4_dry (ppm)','N2O_dry (ppm)','CO_dry (ppm)'])
+    test_cols=data.columns.isin(cols_check)
     if not True in test_cols:
         sys.exit('The datafile does not have any gas columns in it! Closing the program.')
-    
+
+    #Convert data to float to check any bad values in the data. Set those bad values
+    #to nan.
+    cols=data.columns
+    for col in cols:
+        data[col]=pd.to_numeric(data[col], errors='coerce')
+
     return data
 
 def load_times_file():
@@ -299,7 +306,7 @@ def start_end_times_source_name(data_file, times_file, ind):
     #Start and end index of the current closure
     start=data_file.index.searchsorted(times_file['Start time'][ind])
     try:
-        end=data_file.index.searchsorted(times_file['End time'][ind])+1
+        end=data_file.index.searchsorted(times_file['End time'][ind]+dt.timedelta(milliseconds=1))
     except IndexError: #If the system crashed before a closure ends
         end=len(data_file)-1
     
