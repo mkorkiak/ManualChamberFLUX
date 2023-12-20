@@ -24,7 +24,7 @@ except (SyntaxError, NameError):
              " have hyphens around them, and parameters that should have a True"
              " or False value are written capitalized. Closing the program.")
 
-VERSION='v1.3.4 OCT 2023'
+VERSION='v1.3.4 DEC 2023'
 APPNAME='ManualChamberFlUX'
 
 #Ignore warnings. I know what I'm doing.
