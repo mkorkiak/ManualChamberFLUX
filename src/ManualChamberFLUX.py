@@ -24,7 +24,7 @@ except (SyntaxError, NameError):
              " have hyphens around them, and parameters that should have a True"
              " or False value are written capitalized. Closing the program.")
 
-VERSION='v1.3.3 OCT 2023'
+VERSION='v1.3.4 OCT 2023'
 APPNAME='ManualChamberFlUX'
 
 #Ignore warnings. I know what I'm doing.
@@ -936,7 +936,7 @@ def interactive_times(data_file, times_file):
         _,times_name=ntpath.split(config.times_loc)
         times_name=times_name[:-5] #Remove the extension of the filename, assuming xlsx
         #Save the times file as an excel file
-        times_file.to_excel(config.result_loc+times_name+'_new.xlsx',index=False)
+        times_file_save.to_excel(config.result_loc+times_name+'_new.xlsx',index=False)
     
     return times_file
 
