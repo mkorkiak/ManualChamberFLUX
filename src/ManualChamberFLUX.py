@@ -24,7 +24,7 @@ except (SyntaxError, NameError):
              " have hyphens around them, and parameters that should have a True"
              " or False value are written capitalized. Closing the program.")
 
-VERSION='v1.3.4 DEC 2023'
+VERSION='v1.3.5 JAN 2024'
 APPNAME='ManualChamberFlUX'
 
 #Ignore warnings. I know what I'm doing.
@@ -105,6 +105,13 @@ def check_config():
 #Load the chamber data file
 def load_data_file():
     data=pd.read_csv(config.data_loc,sep=',',index_col=0) #Load chamber data
+    #If the data file is not comma-delimited, try semi-colon
+    if len(data.columns)==0:
+        data=pd.read_csv(config.data_loc,sep=';',index_col=0)
+        if len(data.columns)==0:
+            sys.exit('The data file has a weird column separator. It is not comma '
+                     'or semicolon. Please format the data file again with supported '
+                     'separator!')
         
     data.index=pd.to_datetime(data.index,format=config.time_format_data) #Timestamps to datetime
     data=data.sort_index() #Sort data by index
@@ -183,7 +190,10 @@ def load_times_file():
             sys.exit("Closing the program.")
     
     #Check that air pressure values make sense. This is mainly for checking that the units are ok.
-    bad_P=data_times[(data_times['Air pressure (hPa)']<850) | (data_times['Air pressure (hPa)']>1200)].index
+    try:
+        bad_P=data_times[(data_times['Air pressure (hPa)']<850) | (data_times['Air pressure (hPa)']>1200)].index
+    except TypeError: #Find the row that causes the error
+        find_bad_row(data_times, 'Headspace temperature (C)')
     if len(bad_P)>0:
         print("There are unrealistic air pressures in the times file on the following rows:")
         for row in bad_P:
@@ -191,7 +201,11 @@ def load_times_file():
         sys.exit("Closing the program.")
         
     #Check that headspace temperature values make sense. This is mainly for checking that the units are ok.
-    bad_T=data_times[(data_times['Headspace temperature (C)']<-40) | (data_times['Headspace temperature (C)']>50)].index
+    try:
+        bad_T=data_times[(data_times['Headspace temperature (C)']<-40) | (data_times['Headspace temperature (C)']>50)].index
+    except TypeError: #Find the row that causes the error
+        find_bad_row(data_times, 'Headspace temperature (C)')
+    
     if len(bad_T)>0:
         print("There are unrealistic headspace temperatures in the times file on the following rows:")
         for row in bad_T:
@@ -199,6 +213,16 @@ def load_times_file():
         sys.exit("Closing the program.")
         
     return data_times
+
+#Find the row, which causes the error
+def find_bad_row(data, col):
+    for row, item in enumerate(data[col]):
+        try:
+            float(item)
+        except:
+            sys.exit('There is an invalid value in the times-file in '+str(col)+
+                     ' on row '+str(row+2)+'. This may occur due to mistype or '
+                     'excel making weird format conversions. Closing the program.')
 
 #Check which gas columns exist in the data file
 #The column names include "(ppm)", remove it to make code easier to write
