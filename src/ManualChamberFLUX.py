@@ -149,12 +149,12 @@ def load_times_file():
     end_times=pd.Series()
     try:
         for k in range(len(data_times)):
-            start_times=start_times.append(
+            start_times=pd.concat([start_times,
                 pd.Series(index=[pd.to_datetime(data_times.Date[k][0:10]+' '+data_times['Start time'][k],
-                                                format=config.time_format_times)]))
-            end_times=end_times.append(
+                                                format=config.time_format_times)])])
+            end_times=pd.concat([end_times,
                 pd.Series(index=[pd.to_datetime(data_times.Date[k][0:10]+' '+data_times['End time'][k],
-                                                format=config.time_format_times)]))
+                                                format=config.time_format_times)])])
     except:
         sys.exit('There is an invalid value in either "Start time" or "End time" column in the times file!')
     
@@ -814,7 +814,7 @@ def result_array(results_df, gas, fluxes, concs, fit_params, data_closure):
         temp=pd.DataFrame([[fluxes.lin[0],fluxes.exp[0],concs.init,concs.final]],
                           index=[data_closure.index[0]], columns=results_df.columns)
     
-    results_df=results_df.append(temp)
+    results_df=pd.concat([results_df,temp])
     
     return results_df
 
@@ -826,17 +826,17 @@ def result_array_rest(results_rest, results_extra, data_closure, anc_means, cur_
         results_rest.index=[anc_means.index[0]] #Closure starting time as index
         results_rest=results_rest.join(anc_means) #Join the ancillary data of the closure
         #Add fit length column
-        results_rest['Fit length [s]']=np.int(data_closure['Fit length [s]'][len(data_closure)-1]) 
+        results_rest['Fit length [s]']=int(data_closure['Fit length [s]'][len(data_closure)-1]) 
         results_rest['Source']=cur_source #Add the current source
     
     else: #If the dataframe exists (not the first closure of the data), append it with the new values
         temp=pd.DataFrame(results_extra.iloc[ind,:]).transpose()
         temp.index=[anc_means.index[0]]
         temp=temp.join(anc_means)
-        temp['Fit length [s]']=np.int(data_closure['Fit length [s]'][len(data_closure)-1])
+        temp['Fit length [s]']=int(data_closure['Fit length [s]'][len(data_closure)-1])
         temp['Source']=cur_source
      
-        results_rest=results_rest.append(temp) #Append the result dataframe
+        results_rest=pd.concat([results_rest,temp]) #Append the result dataframe
     
     return results_rest
 
