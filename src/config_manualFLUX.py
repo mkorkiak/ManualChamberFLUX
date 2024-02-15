@@ -36,7 +36,10 @@ result_loc='/home/m/flux_example/results/'
 
 #Include the gas mixing ratio columns below of which you want to calculate the
 #fluxes (these need to be DRY concentrations in PPM)
-#You can also give headspace temperature, air pressure, RH and PAR in this file. 
+#You can also give headspace temperature, air pressure and PAR in this file. 
+#Any other columns included in the data file will be added to the result
+#file. So, include environmental values such as RH, soil temperatures, etc. here 
+if you want their closure time averages saved.
 #If headspace temperature is given here AND also in the TIMES file, then the T
 #from the TIMES file will be used in the flux calculation.
     #CO2_dry (ppm)
@@ -45,10 +48,7 @@ result_loc='/home/m/flux_example/results/'
     #CO_dry (ppm)
     #Headspace Temperature (C)
     #Air pressure (hpa)
-    #RH (%)
     #PAR (umol m-2 s-1)
-
-#Rest of the columns in the datafile will be ignored
 
 #The folders can be separated by "/" (Linux and windows) or by "\" (Windows)
 #But if the folders are separated by "\", one needs to add "r" before the first hyphen like this:
