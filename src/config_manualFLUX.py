@@ -39,7 +39,7 @@ result_loc='/home/m/flux_example/results/'
 #You can also give headspace temperature, air pressure and PAR in this file. 
 #Any other columns included in the data file will be added to the result
 #file. So, include environmental values such as RH, soil temperatures, etc. here 
-if you want their closure time averages saved.
+#if you want their closure time averages saved.
 #If headspace temperature is given here AND also in the TIMES file, then the T
 #from the TIMES file will be used in the flux calculation.
     #CO2_dry (ppm)
