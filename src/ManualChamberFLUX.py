@@ -24,7 +24,7 @@ except (SyntaxError, NameError):
              " have hyphens around them, and parameters that should have a True"
              " or False value are written capitalized. Closing the program.")
 
-VERSION='v1.3.5 JAN 2024'
+VERSION='v1.4 FEB 2024'
 APPNAME='ManualChamberFlUX'
 
 #Ignore warnings. I know what I'm doing.
@@ -391,19 +391,19 @@ def limit_closure_time(data_closure, stime):
     return data_closure, stime, skip_flag
 
 #Calculate means of ancillary variables given in the data file
-def datafile_means(anc_means,data_closure):
-    #Calculate the mean for par data
-    try:
-        anc_means['PAR [umol m-2 s-1]']=round(data_closure['PAR (umol m-2 s-1)'].mean())
-        
-    except: #if no par data, ignore it
-        pass
+def datafile_means(anc_means,data_closure,cols_to_calc):
+    #Get the column names that will be dropped
+    #Drop the gas columns and the fit length column
+    drop_cols=cols_to_calc.columns[cols_to_calc.loc[0]==True]
+    drop_cols=drop_cols.append(pd.Index(['Fit length [s]']))
+    data=data_closure.copy().drop(drop_cols,axis=1)
     
-    #Calculate the mean for RH data
-    try:
-        anc_means['RH [%]']=round(data_closure['RH (%)'].mean())
-    except: #if no RH data, ignore it
-        pass
+    data=data.mean()
+    
+    #If the data file contains extra columns, add their means into anc_means
+    if len(data) > 0:
+        for col in data.index:
+            anc_means[col] = data[col]
 
     return anc_means
 
@@ -863,32 +863,85 @@ def interactive_times(data_file, times_file):
                 #Save the times file as an excel file
                 times_file.to_excel(config.result_loc+times_name+'_new.xlsx',index=False)
         
+        #Select which columns to plot
+        plot_cols=cols_to_calc.columns[cols_to_calc.loc[0]==True]
+        
+        #Plot PAR if it exists
+        if 'PAR (umol m-2 s-1)' in data_closure.columns:
+            plot_cols=plot_cols.append(pd.Index(['PAR (umol m-2 s-1)']))
+        
+        #Set colors and labels
+        colors,labels=pd.Series(),pd.Series()
+        for col in plot_cols:
+            if col == 'CO2_dry':
+                colors=pd.concat([colors,pd.Series(['k'],index=['CO2_dry'])])
+                labels=pd.concat([labels,pd.Series(['CO2'],index=['CO2_dry'])])
+            if col == 'CH4_dry':
+                colors=pd.concat([colors,pd.Series(['r'],index=['CH4_dry'])])
+                labels=pd.concat([labels,pd.Series(['CH4'],index=['CH4_dry'])])
+            if col == 'N2O_dry':
+                colors=pd.concat([colors,pd.Series(['g'],index=['N2O_dry'])])
+                labels=pd.concat([labels,pd.Series(['N2O'],index=['N2O_dry'])])
+            if col == 'CO_dry':
+                colors=pd.concat([colors,pd.Series(['m'],index=['CO_dry'])])
+                labels=pd.concat([labels,pd.Series(['CO'],index=['CO_dry'])])
+            if col == 'PAR (umol m-2 s-1)':
+                colors=pd.concat([colors,pd.Series(['y'],index=['PAR (umol m-2 s-1)'])])
+                labels=pd.concat([labels,pd.Series(['PAR'],index=['PAR (umol m-2 s-1)'])])
+                                 
         #Loop the same plot until the clicks have been properly given.
         while True:
             try:
-                fig, ax=plt.subplots(figsize=(12,10))
+                #Set up the positioning of the legends
+                poss=np.arange(0, len(plot_cols), 0.15)+0.1
                 
-                #Plot the data and the legend of all the gases that have data, remove yticks
-                if cols_to_calc.CO2_dry[0]==True and data_closure.CO2_dry.isnull().all()==False:
-                    ax.plot(data_closure.CO2_dry,'o',color='k',label='CO2')
-                    ax.set_yticks([])
-                    ax.legend(loc='upper left',bbox_to_anchor=(0.3,1))
-                if cols_to_calc.CH4_dry[0]==True and data_closure.CH4_dry.isnull().all()==False:
-                    ax=ax.twinx()
-                    ax.plot(data_closure.CH4_dry,'o',color='r',label='CH4')
-                    ax.set_yticks([])
-                    ax.legend(loc='upper left',bbox_to_anchor=(0.4,1))
-                if cols_to_calc.N2O_dry[0]==True and data_closure.N2O_dry.isnull().all()==False:
-                    ax=ax.twinx()
-                    ax.plot(data_closure.N2O_dry,'o',color='g',label='N2O')
-                    ax.set_yticks([])
-                    ax.legend(loc='upper left',bbox_to_anchor=(0.5,1))
-                if cols_to_calc.CO_dry[0]==True and data_closure.CO_dry.isnull().all()==False:
-                    ax=ax.twinx()
-                    ax.plot(data_closure.CO_dry,'o',color='m',label='CO')
-                    ax.set_yticks([])
-                    ax.legend(loc='upper left',bbox_to_anchor=(0.6,1))
+                #Counter
+                count=0
                 
+                fig=plt.figure(figsize=(12,7),tight_layout=True)
+                ax=fig.add_axes([0.1, 0.1, 0.6, 0.8]) 
+                
+                #Plot the data and the legend of all the gases that have data
+                for col, pos in zip(plot_cols, poss):
+                    if data_closure[col].isnull().all()==False:
+                        if count == 0:
+                            ax.plot(data_closure[col],'o',color=colors[col],label=labels[col])
+                            ax.legend(loc='upper left',bbox_to_anchor=(pos,1))
+                            ax.set_ylabel(col,fontsize=12)
+                        if count == 1:
+                            ax1=ax.twinx()
+                            ax1.plot(data_closure[col],'o',color=colors[col],label=labels[col])
+                            ax1.legend(loc='upper left',bbox_to_anchor=(pos,1))
+                            ax1.set_ylabel(col,fontsize=12,color=colors[col])     
+                            ax1.spines['right'].set_color(colors[col])
+                            ax1.tick_params(axis='y', colors=colors[col])
+                        if count == 2:
+                            ax2=ax.twinx()
+                            ax2.plot(data_closure[col],'o',color=colors[col],label=labels[col])
+                            ax2.legend(loc='upper left',bbox_to_anchor=(pos,1))
+                            ax2.spines['right'].set_position(('outward', 60))
+                            ax2.set_ylabel(col,fontsize=12,color=colors[col])    
+                            ax2.spines['right'].set_color(colors[col])
+                            ax2.tick_params(axis='y', colors=colors[col])
+                        if count == 3:
+                            ax3=ax.twinx()
+                            ax3.plot(data_closure[col],'o',color=colors[col],label=labels[col])
+                            ax3.legend(loc='upper left',bbox_to_anchor=(pos,1))
+                            ax3.spines['right'].set_position(('outward', 125))
+                            ax3.set_ylabel(col,fontsize=12,color=colors[col])
+                            ax3.spines['right'].set_color(colors[col])
+                            ax3.tick_params(axis='y', colors=colors[col])
+                        if count == 4:
+                            ax4=ax.twinx()
+                            ax4.plot(data_closure[col],'o',color=colors[col],label=labels[col])
+                            ax4.legend(loc='upper left',bbox_to_anchor=(pos,1))
+                            ax4.spines['right'].set_position(('outward', 190))
+                            ax4.set_ylabel(col,fontsize=12,color=colors[col])
+                            ax4.spines['right'].set_color(colors[col])
+                            ax4.tick_params(axis='y', colors=colors[col])
+                            
+                        count+=1
+    
                 #Add title with the source and starting time to the plot
                 title_str = str(cur_source) + ', ' + stime.strftime(format='%Y-%m-%d %H:%M:%S')
                 ax.set_title(title_str)
@@ -1032,7 +1085,7 @@ def fluxcalc(times_file, data_file):
             anc_means=pd.DataFrame({'T_mean':cur_T,'P_mean':cur_P,'CMB_h':cur_height},index=[stime_new])
             
             #Calculate the means for the possible ancillary data given in the data file
-            anc_means=datafile_means(anc_means,data_closure)
+            anc_means=datafile_means(anc_means,data_closure,cols_to_calc)
             
             #CO2
             if cols_to_calc.CO2_dry[0]==True and data_closure.CO2_dry.isnull().all()==False:
