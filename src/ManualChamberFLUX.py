@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 import os, bisect, warnings, time, sys, ntpath, pip
@@ -13,6 +12,7 @@ try:
     from alive_progress import alive_bar
 except ModuleNotFoundError: #If module is not installed, install it.
     pip.main(['install', 'git+https://github.com/rsalmei/alive-progress']) 
+    from alive_progress import alive_bar
 
 #Import the config file
 try:
@@ -24,7 +24,7 @@ except (SyntaxError, NameError):
              " have hyphens around them, and parameters that should have a True"
              " or False value are written capitalized. Closing the program.")
 
-VERSION='v1.4 FEB 2024'
+VERSION='v1.5 AUG 2024'
 APPNAME='ManualChamberFlUX'
 
 #Ignore warnings. I know what I'm doing.
@@ -72,15 +72,15 @@ def check_config():
     if config.save_statistics!=True and config.save_statistics!=False:
         sys.exit("Config-file: save_statistic has to be either True or False! Closing the program.")
     
-    #Check that the plot_closures paramter has either True or False value
+    #Check that the plot_closures parameter has either True or False value
     if config.plot_closures!=True and config.plot_closures!=False:
         sys.exit("Config-file: plot_closures has to be either True or False! Closing the program.")
     
-    #Check that the plot_closures paramter has either True or False value
+    #Check that the plot_closures parameter has either True or False value
     if config.interactive_times!=True and config.interactive_times!=False:
         sys.exit("Config-file: interactive_times has to be either True or False! Closing the program.")
         
-    #Check that the plot_closures paramter has either True or False value
+    #Check that the plot_closures parameter has either True or False value
     if config.interactive_save!=True and config.interactive_save!=False:
         sys.exit("Config-file: interactive_save has to be either True or False! Closing the program.")
     
@@ -97,7 +97,11 @@ def check_config():
             sys.exit("Config-file: skip_start cannot be smaller than zero! Closing the program.")
     except TypeError:
         sys.exit("Config-file: skip_start has to have a numerical value! Closing the program.")
-        
+
+    #Check that skip_start is 0 when interactive_times is True
+    if config.skip_start !=0 and config.interactive_times == True:
+        sys.exit("Config-file: skip_start cannot be non-zero when interactive_times is True! Closing the program.")
+    
     print("Config file checked.")
     
     return 
@@ -352,34 +356,43 @@ def start_end_times_source_name(data_file, times_file, ind):
     return data_closure, cur_source, stime, skip_flag
 
 #Limit the current closure data according to minimum and maximum fit parameters
-def limit_closure_time(data_closure, stime):
+def limit_closure_time(data_closure_org, stime):
     skip_flag=0 #Used to flag the closure (0=ok, 1=skip)
     
-    a=data_closure.index-stime #Time from the start of the closure for each datapoint
-    x=np.array([])
-    for k in range(len(a)): #Convert to seconds from the start of the closure
-        x=np.append(x,a[k].total_seconds())
+    #Calculate seconds from the beginning of the closure
+    time_dif=(data_closure_org.index-data_closure_org.index[0]).total_seconds()
+    data_closure_org['Fit length [s]']=time_dif
     
     #Check the time difference between the points. If the time difference between
     #the last and the second to last point is 2x larger than the median difference, 
     #remove the last point.
-    time_diffs=np.diff(x)
+    #This is on purpose done for data_closure_org and not for data_closure
+    time_diffs=np.diff(data_closure_org['Fit length [s]'])
     median_excl_last=np.median(time_diffs[:-1])
     last_diff=time_diffs[-1]
     if last_diff > 2*median_excl_last:
-        data_closure=data_closure[:-1]
-        x=x[:-1]
+        data_closure_org=data_closure_org[:-1]
 	
+    #Make a copy of the original data_closure
+    data_closure=data_closure_org.copy()
+
+    #Remove the data from the the start of the closure according to
+    #skip_start parameter
+    data_closure=data_closure[data_closure['Fit length [s]']>=config.skip_start]
+
+    #Substract the number of seconds given in skip_start from both
+    #data_closure_org and data_closure
+    data_closure_org['Fit length [s]']=data_closure_org['Fit length [s]']-config.skip_start
+    data_closure['Fit length [s]']=data_closure['Fit length [s]']-config.skip_start
+
     #If closure is shorter than fit_minimum, ignore it
-    if x[len(x)-1]<config.fit_minimum:
+    if data_closure['Fit length [s]'][len(data_closure)-1]<config.fit_minimum:
         skip_flag=1
         return np.nan, np.nan, skip_flag
     
     #If the closure duration is longer than the allowed (fit_maximum) remove
     #data from the end to reach the maximum allowed length
-    time_dif=(data_closure.index-data_closure.index[0]).total_seconds()
-    data_closure['Fit length [s]']=time_dif #Save seconds from the beginning
-    end=bisect.bisect(time_dif,config.fit_maximum)
+    end=bisect.bisect(data_closure['Fit length [s]'],config.fit_maximum)
     data_closure=data_closure[0:end]
     
     if len(data_closure)<3:
@@ -388,7 +401,7 @@ def limit_closure_time(data_closure, stime):
     
     stime=data_closure.index[0] #Starting time of the closure
         
-    return data_closure, stime, skip_flag
+    return data_closure, data_closure_org, stime, skip_flag
 
 #Calculate means of ancillary variables given in the data file
 def datafile_means(anc_means,data_closure,cols_to_calc):
@@ -618,14 +631,20 @@ def closure_fitting(data_closure, gas):
     return yfits, coef, goods, exp_failed, sse_s, rsq_s, err_slopes, acorrs
 
 #Makes the closure plots
-def flux_plotter(gas_col, data_closure, yfits_gas, exp_failed_gas): 
+def flux_plotter(gas_col, data_closure, data_closure_org, yfits_gas, exp_failed_gas): 
     #fix the fonts in plots when using TEX formatting, remove the italization
     mpl.rcParams['mathtext.default'] = 'regular'
     
     #plotplot
     fig=plt.figure(num=None, figsize=(10, 7), dpi=100) 
     ax=fig.add_subplot(111)
-    #plot the data points
+    #Plot all the data points for the time period given in the times-file if its length differs
+    #from the final data used in fitting.
+    ignored_plotted=False
+    if data_closure_org['Fit length [s]'][0] != data_closure['Fit length [s]'][0]:
+        ignored=ax.plot(data_closure_org['Fit length [s]'], data_closure_org[gas_col], 'o', color='0.6')
+        ignored_plotted=True
+    #plot the data points used for fitting
     org=ax.plot(data_closure['Fit length [s]'], data_closure[gas_col], 'o', color='k')
     #plot the lin fit
     lin,=ax.plot(data_closure['Fit length [s]'], yfits_gas[:,0], '-', color='r', linewidth=2) 
@@ -643,20 +662,29 @@ def flux_plotter(gas_col, data_closure, yfits_gas, exp_failed_gas):
         ax.set_ylabel(r'$N_2O$ mixing ratio (ppm)', fontsize='16')
     if gas_col=='CO_dry':
         ax.set_ylabel(r'$CO$ mixing ratio (ppm)', fontsize='16')
-        
-    if exp_failed_gas==True: #If exp fit failed, modify the legend accordingly
-        ax.legend([org, lin], ['Data', 'Lin fit'], numpoints=1, loc=0, title='Exp fit failed')
-        
-    else: #If exp fit succeded, plot also exp fit and modify the legend accordingly
+    
+    #Make the legend   
+    #If exp fit failed and no data was ignored
+    if exp_failed_gas==True and ignored_plotted==False: 
+        ax.legend(['Fitted data', 'Lin fit'], numpoints=1, loc=0, title='Exp fit failed')
+    #If exp fit failed and ignored data exists
+    elif exp_failed_gas==True and ignored_plotted==True: 
+        ax.legend(['Ignored data','Fitted data', 'Lin fit'], numpoints=1, loc=0, title='Exp fit failed')
+    #If exp fit worked, but no ignored data exists
+    elif exp_failed_gas==False and ignored_plotted==False:
         exp,=ax.plot(data_closure['Fit length [s]'], yfits_gas[:,1], '-', color='g', linewidth=2)
-        ax.legend(['Data', 'Linear fit','Exponential fit'], numpoints=1, loc=0)   
+        ax.legend(['Fitted data', 'Linear fit','Exponential fit'], numpoints=1, loc=0)   
+    #If exp fit worked and ignored data was plotted
+    else: 
+        exp,=ax.plot(data_closure['Fit length [s]'], yfits_gas[:,1], '-', color='g', linewidth=2)
+        ax.legend(['Ignored data','Fitted data', 'Linear fit','Exponential fit'], numpoints=1, loc=0)   
     
     y_formatter=mpl.ticker.ScalarFormatter(useOffset=False)
     ax.yaxis.set_major_formatter(y_formatter)
     
     #Fine-tune x and y limits
-    ax.set_ylim(np.min(data_closure[gas_col])-0.001, np.max(data_closure[gas_col])+0.001)
-    ax.set_xlim([0,data_closure['Fit length [s]'][len(data_closure)-1]])
+    ax.set_ylim(np.min(data_closure_org[gas_col])-0.001, np.max(data_closure_org[gas_col])+0.001)
+    ax.set_xlim([data_closure_org['Fit length [s]'][0],data_closure_org['Fit length [s]'][len(data_closure_org)-1]])
 
     return fig    
 
@@ -672,7 +700,7 @@ def fig_save(fig, pic_time, fig_path, source):
     return    
 
 #Make fits to the gas data and make closure plots
-def gas_fitting(data_closure,gas,cur_source):
+def gas_fitting(data_closure,data_closure_org,gas,cur_source):
     try:
         if gas=='co2':
            if np.isfinite(np.nanmean(data_closure['CO2_dry']))==True:
@@ -734,7 +762,7 @@ def gas_fitting(data_closure,gas,cur_source):
         #Plot closure time series
         if config.plot_closures==True:
             try:
-                fig=flux_plotter(gas_col, data_closure, yfits_gas, exp_failed_gas) #Plot
+                fig=flux_plotter(gas_col, data_closure, data_closure_org, yfits_gas, exp_failed_gas) #Plot
                 fig_save(fig, data_closure.index, config.result_loc+'plots/'+gas, cur_source) #Save
             except IndexError:
                 plt.close(fig)
@@ -1038,7 +1066,7 @@ def fluxcalc(times_file, data_file):
         #Loop through the closures
         for ind in range(len(times_file)):    
             #Get current closure data, source chamber and starting time
-            data_closure, cur_source, stime, skip_flag=start_end_times_source_name(data_file, times_file, ind)
+            data_closure_org, cur_source, stime, skip_flag=start_end_times_source_name(data_file, times_file, ind)
             
             #Check if the data_closure table returned empty
             if skip_flag==1:
@@ -1048,7 +1076,7 @@ def fluxcalc(times_file, data_file):
                       'If times file is ok, the data file does not contain the data for that measurement!')
             
             #Limit the current closure data according to minimum and maximum fit parameters
-            data_closure, stime_new, skip_flag=limit_closure_time(data_closure, stime)
+            data_closure, data_closure_org, stime_new, skip_flag=limit_closure_time(data_closure_org, stime)
             
             #If the closure time is shorter than the minimum required length, skip it.
             if skip_flag==1:
@@ -1093,7 +1121,7 @@ def fluxcalc(times_file, data_file):
                 concs_co2=pd.DataFrame({'init':data_closure.CO2_dry[0],'final':
                                         data_closure.CO2_dry[-1]},index=[0])
                 #Make the fits
-                coef_co2, fit_params_co2=gas_fitting(data_closure,'co2',cur_source) #Make the fits
+                coef_co2, fit_params_co2=gas_fitting(data_closure,data_closure_org,'co2',cur_source) #Make the fits
                 #Calculate the flux
                 fluxes_co2, dcdt_co2=soil_flux(cols_to_calc, 'co2', coef_co2, cur_T, cur_P, cur_height)
                 #Save the results to the results dataframe
@@ -1105,7 +1133,7 @@ def fluxcalc(times_file, data_file):
             if cols_to_calc.CH4_dry[0]==True and data_closure.CH4_dry.isnull().all()==False:
                 concs_ch4=pd.DataFrame({'init':data_closure.CH4_dry[0],'final':
                                         data_closure.CH4_dry[-1]},index=[0])
-                coef_ch4, fit_params_ch4=gas_fitting(data_closure,'ch4',cur_source)
+                coef_ch4, fit_params_ch4=gas_fitting(data_closure,data_closure_org,'ch4',cur_source)
                 fluxes_ch4, dcdt_ch4=soil_flux(cols_to_calc, 'ch4', coef_ch4, cur_T, cur_P, cur_height)
                 results_ch4=result_array(results_ch4, 'ch4', fluxes_ch4, concs_ch4, fit_params_ch4, data_closure)
             
@@ -1113,7 +1141,7 @@ def fluxcalc(times_file, data_file):
             if cols_to_calc.N2O_dry[0]==True and data_closure.N2O_dry.isnull().all()==False:
                 concs_n2o=pd.DataFrame({'init':data_closure.N2O_dry[0],'final':
                                         data_closure.N2O_dry[-1]},index=[0])
-                coef_n2o, fit_params_n2o=gas_fitting(data_closure,'n2o',cur_source)
+                coef_n2o, fit_params_n2o=gas_fitting(data_closure,data_closure_org,'n2o',cur_source)
                 fluxes_n2o, dcdt_n2o=soil_flux(cols_to_calc, 'n2o', coef_n2o, cur_T, cur_P, cur_height)
                 results_n2o=result_array(results_n2o, 'n2o', fluxes_n2o, concs_n2o, fit_params_n2o, data_closure)
             
@@ -1121,7 +1149,7 @@ def fluxcalc(times_file, data_file):
             if cols_to_calc.CO_dry[0]==True and data_closure.CO_dry.isnull().all()==False:
                 concs_co=pd.DataFrame({'init':data_closure.CO_dry[0],'final':
                                         data_closure.CO_dry[-1]},index=[0])
-                coef_co, fit_params_co=gas_fitting(data_closure,'co',cur_source)    
+                coef_co, fit_params_co=gas_fitting(data_closure,data_closure_org,'co',cur_source)    
                 fluxes_co, dcdt_co=soil_flux(cols_to_calc, 'co', coef_co, cur_T, cur_P, cur_height)
                 results_co=result_array(results_co, 'co', fluxes_co, concs_co, fit_params_co, data_closure)
                     
