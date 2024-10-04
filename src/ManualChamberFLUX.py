@@ -8,11 +8,17 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
 from scipy.stats import pearsonr
+
 try:
     from alive_progress import alive_bar
 except ModuleNotFoundError: #If module is not installed, install it.
     pip.main(['install', 'git+https://github.com/rsalmei/alive-progress']) 
     from alive_progress import alive_bar
+
+try:
+    import mplcursors
+except ModuleNotFoundError: #If module is not installed, install it.
+    pip.main(['install', 'mplcursors'])
 
 #Import the config file
 try:
@@ -870,6 +876,15 @@ def result_array_rest(results_rest, results_extra, data_closure, anc_means, cur_
 
 #Select starting and ending times for the fits interactively
 def interactive_times(data_file, times_file):
+    #Plot the vertical line when selecting the start and end times
+    def show_annotation(sel):
+        #Get x-values
+        xi = sel.target[0]
+        #Plot the vertical line
+        vertical_line = ax.axvline(xi, color='red', ls='-', lw=1)
+        #Add the vertical line to extras so it will be plotted
+        sel.extras.append(vertical_line)
+
     #Check which gas columns exist in the data file
     cols_to_calc, data_file=check_columns(data_file)
     
@@ -977,6 +992,10 @@ def interactive_times(data_file, times_file):
                 #tick format to %H:%M:%S
                 fmt=mpl.dates.DateFormatter('%H:%M:%S')
                 ax.xaxis.set_major_formatter(fmt)
+
+                #Activate a hoverbox and the vertical line
+                cursor = mplcursors.cursor(hover=True)
+                cursor.connect('add', show_annotation)
 		
                 #Make the plot and wait for the clicks
                 new_times=plt.ginput(3, show_clicks=True)
