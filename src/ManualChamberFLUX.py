@@ -159,12 +159,20 @@ def load_times_file():
     end_times=pd.Series()
     try:
         for k in range(len(data_times)):
-            start_times=pd.concat([start_times,
-                pd.Series(index=[pd.to_datetime(data_times.Date[k][0:10]+' '+data_times['Start time'][k],
-                                                format=config.time_format_times)])])
-            end_times=pd.concat([end_times,
-                pd.Series(index=[pd.to_datetime(data_times.Date[k][0:10]+' '+data_times['End time'][k],
-                                                format=config.time_format_times)])])
+            if len(start_times)==0:
+                start_times=pd.Series(index=[pd.to_datetime(data_times.Date[k][0:10]+' '+data_times['Start time'][k],
+                                                format=config.time_format_times)])
+            else:
+                start_times=pd.concat([start_times,
+                    pd.Series(index=[pd.to_datetime(data_times.Date[k][0:10]+' '+data_times['Start time'][k],
+                                                    format=config.time_format_times)])])
+            if len(end_times)==0:
+                end_times=pd.Series(index=[pd.to_datetime(data_times.Date[k][0:10]+' '+data_times['End time'][k],
+                                                format=config.time_format_times)])
+            else:
+                end_times=pd.concat([end_times,
+                    pd.Series(index=[pd.to_datetime(data_times.Date[k][0:10]+' '+data_times['End time'][k],
+                                                    format=config.time_format_times)])])
     except:
         sys.exit('There is an invalid value in either "Start time" or "End time" column in the times file!')
     
@@ -324,7 +332,7 @@ def init_results_rest(times_file):
 
 #Time averaging for the gas mixing ratio data
 def data_time_avg(data):
-    secs=str(config.time_avg)+'S' #formatting for the resample function
+    secs=str(config.time_avg)+'s' #formatting for the resample function
     data=data.apply(pd.to_numeric,errors='coerce') #Transform all values to numeric values
     data=data.resample(secs).mean() #Do the time averaging
     data=data.dropna(how='all') #Drop rows if all values are nan
@@ -392,7 +400,7 @@ def limit_closure_time(data_closure_org, stime):
     data_closure['Fit length [s]']=data_closure['Fit length [s]']-config.skip_start
 
     #If closure is shorter than fit_minimum, ignore it
-    if data_closure['Fit length [s]'][len(data_closure)-1]<config.fit_minimum:
+    if data_closure['Fit length [s]'].iloc[len(data_closure)-1]<config.fit_minimum:
         skip_flag=1
         return np.nan, np.nan, skip_flag
     
@@ -647,7 +655,7 @@ def flux_plotter(gas_col, data_closure, data_closure_org, yfits_gas, exp_failed_
     #Plot all the data points for the time period given in the times-file if its length differs
     #from the final data used in fitting.
     ignored_plotted=False
-    if data_closure_org['Fit length [s]'][0] != data_closure['Fit length [s]'][0]:
+    if data_closure_org['Fit length [s]'].iloc[0] != data_closure['Fit length [s]'].iloc[0]:
         ignored=ax.plot(data_closure_org['Fit length [s]'], data_closure_org[gas_col], 'o', color='0.6')
         ignored_plotted=True
     #plot the data points used for fitting
@@ -690,7 +698,7 @@ def flux_plotter(gas_col, data_closure, data_closure_org, yfits_gas, exp_failed_
     
     #Fine-tune x and y limits
     ax.set_ylim(np.min(data_closure_org[gas_col])-0.001, np.max(data_closure_org[gas_col])+0.001)
-    ax.set_xlim([data_closure_org['Fit length [s]'][0],data_closure_org['Fit length [s]'][len(data_closure_org)-1]])
+    ax.set_xlim([data_closure_org['Fit length [s]'].iloc[0],data_closure_org['Fit length [s]'].iloc[len(data_closure_org)-1]])
 
     return fig    
 
@@ -848,7 +856,10 @@ def result_array(results_df, gas, fluxes, concs, fit_params, data_closure):
         temp=pd.DataFrame([[fluxes.lin[0],fluxes.exp[0],concs.init,concs.final]],
                           index=[data_closure.index[0]], columns=results_df.columns)
     
-    results_df=pd.concat([results_df,temp])
+    if len(results_df)==0:
+        results_df=temp
+    else:
+        results_df=pd.concat([results_df,temp])
     
     return results_df
 
@@ -860,14 +871,14 @@ def result_array_rest(results_rest, results_extra, data_closure, anc_means, cur_
         results_rest.index=[anc_means.index[0]] #Closure starting time as index
         results_rest=results_rest.join(anc_means) #Join the ancillary data of the closure
         #Add fit length column
-        results_rest['Fit length [s]']=int(data_closure['Fit length [s]'][len(data_closure)-1]) 
+        results_rest['Fit length [s]']=int(data_closure['Fit length [s]'].iloc[len(data_closure)-1]) 
         results_rest['Source']=cur_source #Add the current source
     
     else: #If the dataframe exists (not the first closure of the data), append it with the new values
         temp=pd.DataFrame(results_extra.iloc[ind,:]).transpose()
         temp.index=[anc_means.index[0]]
         temp=temp.join(anc_means)
-        temp['Fit length [s]']=int(data_closure['Fit length [s]'][len(data_closure)-1])
+        temp['Fit length [s]']=int(data_closure['Fit length [s]'].iloc[len(data_closure)-1])
         temp['Source']=cur_source
      
         results_rest=pd.concat([results_rest,temp]) #Append the result dataframe
@@ -1035,8 +1046,8 @@ def interactive_times(data_file, times_file):
             break
     
         #Update the times_file with new interactively selected start and end times
-        times_file['Start time'][ind]=new_start
-        times_file['End time'][ind]=new_end
+        times_file.loc[ind,'Start time']=new_start
+        times_file.loc[ind,'End time']=new_end
     
     #Save the updated times_file?
     if config.interactive_save==True:
@@ -1135,10 +1146,10 @@ def fluxcalc(times_file, data_file):
             anc_means=datafile_means(anc_means,data_closure,cols_to_calc)
             
             #CO2
-            if cols_to_calc.CO2_dry[0]==True and data_closure.CO2_dry.isnull().all()==False:
+            if cols_to_calc.CO2_dry.iloc[0]==True and data_closure.CO2_dry.isnull().all()==False:
                 #Get the initial and final CO2 mixing ratios during the closure
-                concs_co2=pd.DataFrame({'init':data_closure.CO2_dry[0],'final':
-                                        data_closure.CO2_dry[-1]},index=[0])
+                concs_co2=pd.DataFrame({'init':data_closure.CO2_dry.iloc[0],'final':
+                                        data_closure.CO2_dry.iloc[-1]},index=[0])
                 #Make the fits
                 coef_co2, fit_params_co2=gas_fitting(data_closure,data_closure_org,'co2',cur_source) #Make the fits
                 #Calculate the flux
@@ -1149,25 +1160,25 @@ def fluxcalc(times_file, data_file):
             
             #Repeat for the rest of the gases
             #CH4
-            if cols_to_calc.CH4_dry[0]==True and data_closure.CH4_dry.isnull().all()==False:
-                concs_ch4=pd.DataFrame({'init':data_closure.CH4_dry[0],'final':
-                                        data_closure.CH4_dry[-1]},index=[0])
+            if cols_to_calc.CH4_dry.iloc[0]==True and data_closure.CH4_dry.isnull().all()==False:
+                concs_ch4=pd.DataFrame({'init':data_closure.CH4_dry.iloc[0],'final':
+                                        data_closure.CH4_dry.iloc[-1]},index=[0])
                 coef_ch4, fit_params_ch4=gas_fitting(data_closure,data_closure_org,'ch4',cur_source)
                 fluxes_ch4, dcdt_ch4=soil_flux(cols_to_calc, 'ch4', coef_ch4, cur_T, cur_P, cur_height)
                 results_ch4=result_array(results_ch4, 'ch4', fluxes_ch4, concs_ch4, fit_params_ch4, data_closure)
             
             #N2O
-            if cols_to_calc.N2O_dry[0]==True and data_closure.N2O_dry.isnull().all()==False:
-                concs_n2o=pd.DataFrame({'init':data_closure.N2O_dry[0],'final':
-                                        data_closure.N2O_dry[-1]},index=[0])
+            if cols_to_calc.N2O_dry.iloc[0]==True and data_closure.N2O_dry.isnull().all()==False:
+                concs_n2o=pd.DataFrame({'init':data_closure.N2O_dry.iloc[0],'final':
+                                        data_closure.N2O_dry.iloc[-1]},index=[0])
                 coef_n2o, fit_params_n2o=gas_fitting(data_closure,data_closure_org,'n2o',cur_source)
                 fluxes_n2o, dcdt_n2o=soil_flux(cols_to_calc, 'n2o', coef_n2o, cur_T, cur_P, cur_height)
                 results_n2o=result_array(results_n2o, 'n2o', fluxes_n2o, concs_n2o, fit_params_n2o, data_closure)
             
             #CO
-            if cols_to_calc.CO_dry[0]==True and data_closure.CO_dry.isnull().all()==False:
-                concs_co=pd.DataFrame({'init':data_closure.CO_dry[0],'final':
-                                        data_closure.CO_dry[-1]},index=[0])
+            if cols_to_calc.CO_dry.iloc[0]==True and data_closure.CO_dry.isnull().all()==False:
+                concs_co=pd.DataFrame({'init':data_closure.CO_dry.iloc[0],'final':
+                                        data_closure.CO_dry.iloc[-1]},index=[0])
                 coef_co, fit_params_co=gas_fitting(data_closure,data_closure_org,'co',cur_source)    
                 fluxes_co, dcdt_co=soil_flux(cols_to_calc, 'co', coef_co, cur_T, cur_P, cur_height)
                 results_co=result_array(results_co, 'co', fluxes_co, concs_co, fit_params_co, data_closure)
