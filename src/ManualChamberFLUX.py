@@ -30,7 +30,7 @@ except (SyntaxError, NameError):
              " have hyphens around them, and parameters that should have a True"
              " or False value are written capitalized. Closing the program.")
 
-VERSION='v1.5.2 JAN 2025'
+VERSION='v1.5.3 MAR 2026'
 APPNAME='ManualChamberFlUX'
 
 #Ignore warnings. I know what I'm doing.
@@ -157,24 +157,29 @@ def load_times_file():
     #Times to datetime
     start_times=pd.Series()
     end_times=pd.Series()
-    try:
-        for k in range(len(data_times)):
+    for k in range(len(data_times)):
+        try:
+            cur_start=pd.to_datetime(data_times.Date[k][0:10]+' '+data_times['Start time'][k],
+                                            format=config.time_format_times)
             if len(start_times)==0:
-                start_times=pd.Series(index=[pd.to_datetime(data_times.Date[k][0:10]+' '+data_times['Start time'][k],
-                                                format=config.time_format_times)])
+                start_times=pd.Series(index=[cur_start])
             else:
-                start_times=pd.concat([start_times,
-                    pd.Series(index=[pd.to_datetime(data_times.Date[k][0:10]+' '+data_times['Start time'][k],
-                                                    format=config.time_format_times)])])
+                start_times=pd.concat([start_times, pd.Series(index=[cur_start])])
+        except:
+            sys.exit('There is at least one invalid value in "Start time" column in the times file! \n'+
+                     'The first invalid value is found on row '+str(k+2)+', having a datetime value of '+
+                     data_times.Date[k][0:10]+' '+data_times['Start time'][k])
+        try:    
+            cur_end=pd.to_datetime(data_times.Date[k][0:10]+' '+data_times['End time'][k],
+                                            format=config.time_format_times)
             if len(end_times)==0:
-                end_times=pd.Series(index=[pd.to_datetime(data_times.Date[k][0:10]+' '+data_times['End time'][k],
-                                                format=config.time_format_times)])
+                end_times=pd.Series(index=[cur_end])
             else:
-                end_times=pd.concat([end_times,
-                    pd.Series(index=[pd.to_datetime(data_times.Date[k][0:10]+' '+data_times['End time'][k],
-                                                    format=config.time_format_times)])])
-    except:
-        sys.exit('There is an invalid value in either "Start time" or "End time" column in the times file!')
+                end_times=pd.concat([end_times, pd.Series(index=[cur_end])])
+        except:
+            sys.exit('There is at least one invalid value in "End time" column in the times file! \n'+
+                     'The first invalid value is found on row '+str(k+2)+', having a datetime value of '+
+                     data_times.Date[k][0:10]+' '+data_times['End time'][k])
     
     data_times['Start time']=start_times.index
     data_times['End time']=end_times.index
