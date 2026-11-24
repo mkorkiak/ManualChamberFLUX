@@ -1348,17 +1348,17 @@ def interactive_times(data_file, times_file):
         
         #Check if the data_closure table returned empty
         if skip_flag == 1:
+			#Save the updated times_file?
+            if config.interactive_save == True:
+                times_file = save_times_file(times_file)
+				
             timestr = times_file['Start time'][ind].strftime('%Y-%m-%d %H:%M:%S')
             sys.exit('No data for the measurement starting on: ' + timestr + 
                      ' was found. Check the Start and End time in the times file ' +
                      'for that measurement! If times file is ok, the data file ' +
                      'does not contain the data for that measurement! ' + 
                      'Times selected so far have been saved in a file.')
-            
-            #Save the updated times_file?
-            if config.interactive_save == True:
-                times_file = save_times_file(times_file)
-        
+
         #Select which columns to plot
         plot_cols = cols_to_calc.columns[cols_to_calc.loc[0] == True]
         
