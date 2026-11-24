@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-import os, bisect, warnings, time, sys, ntpath, pip
+import os, bisect, warnings, time, sys, ntpath, mplcursors
 import numpy as np
 import datetime as dt
 import pandas as pd
@@ -7,17 +7,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
 from scipy.stats import pearsonr
-
-try:
-    from alive_progress import alive_bar
-except ModuleNotFoundError: #If module is not installed, install it.
-    pip.main(['install', 'git+https://github.com/rsalmei/alive-progress']) 
-    from alive_progress import alive_bar
-
-try:
-    import mplcursors
-except ModuleNotFoundError: #If module is not installed, install it.
-    pip.main(['install', 'mplcursors'])
+from alive_progress import alive_bar
 
 #Import the config file
 try:
@@ -30,7 +20,7 @@ except (SyntaxError, NameError):
              " or False value are written capitalized. Closing the program.")
 
 ######################################################################################
-VERSION='v1.5.4 NOV 2026'
+VERSION='v1.5.5 NOV 2026'
 APPNAME='ManualChamberFlUX'
 
 #Ignore warnings. I know what I'm doing.
@@ -494,17 +484,17 @@ def start_end_times_source_name(data_file, times_file, ind):
     
     data_closure = data_file.iloc[start : end] #Get the current closure
     
+    try:
+        stime = data_closure.index[0] #Starting time
+    except IndexError: #If the current closure data is empty, move to the next one
+        skip_flag = 1 #Skip this closure
+        return np.nan, cur_source, times_file['Start time'][ind], skip_flag
+
     #Check that the closure is shorter than two hours because no one does chamber
     #measurements that take longer than that, if they do, they are doing something wrong
     #If it is not shorter than 2 hours, skip it
     if (data_closure.index[-1] - data_closure.index[0]).total_seconds() > 120 * 60:
         skip_flag = 1
-        return np.nan, cur_source, times_file['Start time'][ind], skip_flag
-        
-    try:
-        stime = data_closure.index[0] #Starting time
-    except IndexError: #If the current closure data is empty, move to the next one
-        skip_flag = 1 #Skip this closure
         return np.nan, cur_source, times_file['Start time'][ind], skip_flag
     
     return data_closure, cur_source, stime, skip_flag
@@ -692,7 +682,7 @@ def exp_fit(x, y, coefs_2nd):
     np.sqrt((errcoefs_exp[1] / coefs_exp[1]) ** 2 + (errcoefs_exp[2] / coefs_exp[2]) ** 2))
     
     #Calculate SSE
-    sse = np.array([np.mean((y.values - func_exp(x.values, *coefs_exp)) ** 2) * len(x)])
+    sse = np.mean((y.values - func_exp(x.values, *coefs_exp)) ** 2) * len(x)
     
     #Calculate rmse and nrmse. assuming ydata is in ppm
     goods_exp = rmse_nrmse_calc(sse, y.values)
@@ -749,9 +739,6 @@ def autocorrelation(residual):
     """
     n = len(residual) #Number of measurements
     variance = residual.var() #Variance of residuals
-    
-    #Remove the trend --> deviation from the mean for individual measurement points
-    x = residual-residual.mean()
     
     #Calculate correlation sums at every lag (x vs shifted x)
     r = np.correlate(residual, residual, mode = 'full')[-n:]
@@ -855,7 +842,7 @@ def closure_fitting(data_closure, gas):
     data_lin = np.polyval(coefs_lin[0], fit_data.x)
     
     #Calculate rmse and nrmse
-    sse_lin = coefs_lin[1]
+    sse_lin = coefs_lin[1][0]
     goods_lin = rmse_nrmse_calc(sse_lin, data_closure[gas])
     
     #If goods_lin array is empty for some weird reason (SSE missing), insert nans
@@ -957,11 +944,11 @@ def flux_plotter(gas_col, data_closure, data_closure_org, yfits_gas, exp_failed_
     #its length differs from the final data used in fitting.
     ignored_plotted = False
     if data_closure_org['Fit length [s]'].iloc[0] != data_closure['Fit length [s]'].iloc[0]:
-        ignored = ax.plot(data_closure_org['Fit length [s]'], 
+        ax.plot(data_closure_org['Fit length [s]'], 
                           data_closure_org[gas_col], 'o', color = '0.6')
         ignored_plotted = True
     #Plot the data points used for fitting
-    org = ax.plot(data_closure['Fit length [s]'], 
+    ax.plot(data_closure['Fit length [s]'], 
                   data_closure[gas_col], 'o', color = 'k')
     #Plot the lin fit
     lin, = ax.plot(data_closure['Fit length [s]'], yfits_gas[:,0], '-', 
@@ -1137,7 +1124,7 @@ def gas_fitting(data_closure, data_closure_org, gas, cur_source):
                 pass
     
     #If fitting fails, set everything to nan
-    except (np.linalg.linalg.LinAlgError, ValueError, TypeError, AttributeError):
+    except (np.linalg.LinAlgError, ValueError, TypeError, AttributeError):
         coef_gas = np.array([np.nan, np.nan, np.nan])
         coef_gas = np.vstack([coef_gas, coef_gas])
         fit_params = pd.DataFrame({'acorrs' : [np.nan, np.nan], 
@@ -1297,6 +1284,37 @@ def result_array_rest(results_rest, results_extra, data_closure, anc_means, cur_
     
     return results_rest
 
+def save_times_file(times_file):
+    times_file_save = times_file.copy()
+    datestrs = pd.Series()
+    startstrs = pd.Series()
+    endstrs = pd.Series()
+    
+    #Change Date and Time columns to string
+    for date, st_time, et_time, ind in zip(times_file.Date, times_file['Start time'], 
+                                           times_file['End time'], times_file.index):
+        datestrs = pd.concat([datestrs,pd.Series(date[0:10], index = [ind])])
+        startstrs = pd.concat([startstrs,pd.Series(st_time.strftime('%H:%M:%S'), 
+                                                   index = [ind])])
+        endstrs = pd.concat([endstrs, pd.Series(et_time.strftime('%H:%M:%S'), 
+                                                index = [ind])])
+    
+    #Replace Date, Start time and End time column datetimes with their 
+    #respective strings
+    times_file_save.Date = datestrs
+    times_file_save['Start time'] = startstrs
+    times_file_save['End time'] = endstrs
+
+    #Get the name of the times file
+    _, times_name = ntpath.split(config.times_loc)
+    times_name = times_name[:-5] #Remove the extension of the filename, assuming xlsx
+    
+    #Save the times file as an excel file
+    times_file_save.to_excel(config.result_loc + times_name + '_new.xlsx', 
+                             index = False)
+    
+    return times_file
+
 def interactive_times(data_file, times_file):
     """
     Select starting and ending times for the fits interactively
@@ -1334,18 +1352,12 @@ def interactive_times(data_file, times_file):
             sys.exit('No data for the measurement starting on: ' + timestr + 
                      ' was found. Check the Start and End time in the times file ' +
                      'for that measurement! If times file is ok, the data file ' +
-                     'does not contain the data for that measurement!')
+                     'does not contain the data for that measurement! ' + 
+                     'Times selected so far have been saved in a file.')
+            
             #Save the updated times_file?
             if config.interactive_save == True:
-                #Get the name of the times file
-                _, times_name = ntpath.split(config.times_loc)
-                
-                #Remove the extension of the filename, assuming xlsx
-                times_name = times_name[:-5] 
-                
-                #Save the times file as an excel file
-                times_file.to_excel(config.result_loc + times_name + '_new.xlsx', 
-                                    index = False)
+                times_file = save_times_file(times_file)
         
         #Select which columns to plot
         plot_cols = cols_to_calc.columns[cols_to_calc.loc[0] == True]
@@ -1490,33 +1502,7 @@ def interactive_times(data_file, times_file):
     
     #Save the updated times_file?
     if config.interactive_save == True:
-        times_file_save = times_file.copy()
-        datestrs = pd.Series()
-        startstrs = pd.Series()
-        endstrs = pd.Series()
-        
-        #Change Date and Time columns to string
-        for date, st_time, et_time, ind in zip(times_file.Date, times_file['Start time'], 
-                                               times_file['End time'], times_file.index):
-            datestrs = pd.concat([datestrs,pd.Series(date[0:10], index = [ind])])
-            startstrs = pd.concat([startstrs,pd.Series(st_time.strftime('%H:%M:%S'), 
-                                                       index = [ind])])
-            endstrs = pd.concat([endstrs, pd.Series(et_time.strftime('%H:%M:%S'), 
-                                                    index = [ind])])
-        
-        #Replace Date, Start time and End time column datetimes with their 
-        #respective strings
-        times_file_save.Date = datestrs
-        times_file_save['Start time'] = startstrs
-        times_file_save['End time'] = endstrs
-	
-        #Get the name of the times file
-        _, times_name = ntpath.split(config.times_loc)
-        times_name = times_name[:-5] #Remove the extension of the filename, assuming xlsx
-        
-        #Save the times file as an excel file
-        times_file_save.to_excel(config.result_loc + times_name + '_new.xlsx', 
-                                 index = False)
+        times_file = save_times_file(times_file)
     
     return times_file
 
